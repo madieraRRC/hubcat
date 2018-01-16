@@ -1,0 +1,221 @@
+￼
+￼
+Contbuild: A Simple Continuous Integration System With Static Files [In Myrddin]
+Datetime:2016-10-10     Topic: Continuous Integration  Git  HTML 
+Contbuild
+Contbuild is, as the name implies, a continuous build and test utility. It takes a simple .ini file for configuration, and generates a static site with the build status of your project or projects.
+
+It's designed to be simple, easy to configure, and easy to use, and trivial to maintain. It is not designed for gigantic projects that need special build queues, parallel runners, distributed compiles, since it just iterates through the projects and spits out reports in serial.
+
+Configuration for contbuild is simple. If your project can be built with make , tested with make check , and run with make clean , then it would be sufficient to put the below text into contbuild.ini :
+
+1
+2
+3
+[project-name]
+    htmldir=/path/to/output/
+    repo=https://github.com/yourname/project/
+Of course, this isn't quite sufficient for many projects. Many will want build breakage reports emailed out, others will want to specify custom build and test commands, and so on.
+
+With one exception, all options used for the build may be set to default values at the top level of the ini file, and overriden on a per-target basis. The scratch directory where temporary builds go must be shared among all targets, and is only respected at the top level.
+
+An Example
+What does it look like? Well, it's running on eigenstate. Just check the sidebar, or click the picture below, with our immortalized our red bars of shame:
+
+￼
+
+Although, in our defense, the red bars of shame are largely casued by building old commits against new APIs with changed type signatures.
+
+The configuration for that contbuild is included below:
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+htmldir=/home/ori/www/eigenstate.org/contbuild
+htmlroot=/home/ori/www/eigenstate.org/
+email=ori@eigenstate.org
+ 
+    [mc.debian]
+        repo=git://git.eigenstate.org/git/ori/mc.git
+ 
+    [mc.freebsd]
+        repo=git://git.eigenstate.org/git/ori/mc.git
+        remote=contbuild-freebsd
+        scratch=/home/contbuild/builds
+    # BSD make doesn't know what to do with our makefiles.
+        build=gmake
+        test=gmake check
+        clean=gmake clean
+ 
+[mparse]
+    repo=git://git.eigenstate.org/git/ori/mparse.git
+    build=mbld
+    test=mbld test
+    clean=mbld clean
+ 
+[qbe]
+    repo=git://c9x.me/qbe.git
+ 
+[qc]
+    repo=https://github.com/andrewchambers/qc.git
+    build=mbld
+    test=mbld test
+    clean=mbld clean
+ 
+[contbuild]
+    repo=git://git.eigenstate.org/git/ori/contbuild.git
+    build=mbld
+    test=mbld test
+    clean=mbld clean
+Operation
+Contbuild is a simple poller. Once every period seconds (by default, 300), it will wake up and iterate through all of the repositories, building, testing, and cleaning for any new changes since the last time the repository was updated.
+
+When all of the commands have run, it will purge the repository to allow for a fresh build of the code, update the static HTML, and if an email address is configured and the state has changed from working to broken or vice versa, it will fire off emails.
+
+The HTML output is written to the configured htmldir , with paths rooted in htmlroot . So, for example, if htmldir is /var/www/contbuild/dir and htmlroot is /var/www/ , output will have paths in the form /contbuild/dir/generated/file.html .
+
+Note: on the first clone of the repository, it will not build any previous builds by default.
+
+When starting,
+
+Command Line Options
+-c config
+The config file to use. Default: `./contbuild.ini`.
+
+General build options
+scratch
+This is the scratch directory, where the repositories are checked out, builds are done, and the state of the world is kept. This defaults to `/tmp/contbuild-work`. This option is unique, since the global value is used, and does not merely act as a default for per-target values.
+
+When set at the top level, this defines the location to store all build state into, as well as the default location to store the git working git repositories. Per target overrides only override the location of the git repo.
+
+Defaults to /tmp/contbuild
+
+tip
+The branch to run the build and tests on. Defaults to `master`.
+
+remote
+The remote host to build on. This runs commands via SSH, so you must configure passwordless login on the build target in order for this to work. If unset, the build is run locally. Default: unset
+repo
+The repository used for the tests. Multiple targets may use the same repository if there are different suites, branches, or commands to use. There is no default value.
+
+build
+The command used to build the code. This command is executed directly with `exec`, and is not interpreted by a shell. Anything other than a clean exit status is understood as a failure. Defaults to `make`.
+
+test
+The command used to test the code. This command is executed directly with `exec` and is not interpreted by the shell. Anything other than a clean exit status is understood as a failure. Defaults to `make check`.
+
+clean
+The command used to clean up after a build the code. This command is executed directly with `exec` and is not interpreted by the shell. Anything other than a clean exit status is understood as a failure. Defaults to `make clean`.
+
+fix
+The command to attempt to automatically fix a bad build. This can be used to, for example, regenerate bootstrap scripts, update dependencies, or do other automated tasks for dealing with known failure modes. Note, this should not be needed often. This command is executed directly with `exec` and is not interpreted by the shell.Anything other than a clean exit status is understood as a failure. Defaults to empty.
+
+period
+The time, in seconds, between polling of the git repositories for new changes. This is a global option. Defaults to `300`.
+
+Reporting options
+htmlidr
+HTML output is written to this directory. There is no default value. If ommitted, no output is produced.
+
+htmlroot
+The directory relative to which generated paths in the HTML should be written. This defaults to the value of `htmldir`.
+
+htmlstyle
+The path, relative to the html root, where the CSS used for the generated HTML is kept. Note that while this can be overridden on a per target basis, the CSS path used for the index will be the global one. Defaults to `/style.css`.
+
+email
+The email address that failure notifications should be mailed. The emails are delivered via the `mail` program. Notifications are edge triggered. That is, they are only sent if the build state changes.
+
+Bugs and Missing Features
+Currently, there are a number of features that I would like to add support for.
+
+For example, Builds should probably be done asyncronously in the background using threads or processes.
+
+Ideally, there would be built in defautls for language types that would allow skipping custom build commands. It should be possible to say:
+
+[foo] projtype=cmake [bar] projtype=automake [baz] projtype=myrddin
+
+instead of setting up separate build/test commands.
+
+9front support would be useful, or at least a way of specifying a remote host command such that I could use drawterm to add the 9front build to the contbuild via drawterm. I suppose this would also be useful for windows folks.
+
+
+
+Tags：
+Continuous Integration
+Git
+HTML
+126Kr
+About
+
+Implementing git-flow releasing model in continuous integration process
+AIDA: Badoo’s journey into Continuous Integration
+The Next Mesa Version Is Turning Into A Monstrous Release
+8+2 Maturity Levels of Continuous Integration
+Poor man's continuous integration
+When Pelican met CircleCi
+100:10:1 update 4
+Ryan McGeary's Blog :: Continuous Integration and Deployment with Middl...
+A beginner’s guide to deploying static sites using Flightplan
+Hugo Static Site Generator Tutorial
+Hot
+
+A Deep Dive Into Continuous Integration Using Jenkins Pipeline
+Angular 2 : Continuous Integration to Azure using Codeship and the Angular CLI
+Continuous integration and delivery to Azure websites with Bamboo
+Continuous Integration for a Spring Boot App Using Codeship and Openshift
+Continuous Integration for React Native Apps With Fastlane and Bitrise
+Setting Up GitLab Runner for Continuous Integration
+8 Best Jenkins Plugins for Highly Productive Continuous Integration Server
+SonarQube Analysis in Continuous Integration using Team Build in VSTS
+Poor man's continuous integration
+Continuous Integration for UWP projects – Making Builds Faster
+New
+
+Stabilizing the CI By Re-Running Flaky iOS XCUI Tests
+Continuous Integration: Servers and Tools
+Bliki: ContinuousIntegrationCertification
+Top 5 Reasons for CI Failure
+DevOps @ HumanGeo Part 2 - Continuous Integration
+A Pocket Guide to Linting (Enabling Code Linting Everywhere)
+Docker adds continuous integration to DataKit
+Benefits of Continuous Integration
+Using Xcode Server for iOS Continuous Integration
+Deleting Projects and Organizations in Load Impact
+￼
+
+
+
